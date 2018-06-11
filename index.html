@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<head>
+	<style>
+		html,body{
+			width: 100%;
+			height: 100%;
+			padding: 0;
+			margin: 0;
+		}
+	</style>
+
+</head>
+<body>
+	<canvas id="canvas" width='500' height='500' style="display:block;"></canvas>
+</body>
+<script>
+
+	var triangleSize = 50;
+	var triangleTime = 500;
+	var triangleTreshold = 0.5;
+	var dt = 0.07;
+	var triangleColors = [['rgba(0,0,0,1)',0], ['rgba(0,0,0,0)',1]];
+
+	var canvas = document.getElementById('canvas');
+	var ctx = canvas.getContext('2d');
+
+	var sizeX = window.innerWidth;
+	var sizeY = window.innerHeight;
+
+	window.addEventListener('resize',function(){
+		sizeX = window.innerWidth;
+		sizeY = window.innerHeight;
+		canvas.width = sizeX;
+		canvas.height = sizeY;
+		
+	})
+
+	canvas.width = sizeX;
+	canvas.height = sizeY;
+
+	Array.prototype.back = function(){
+		return this[this.length-1];
+	}
+
+	function For(n,fn){
+		var i = 0;
+		while(i<n){
+			fn(i);
+			++i;
+		}
+	}
+	
+	function Point3d(x,y,z){
+		this.x = x;
+		this.y = y;
+		this.z = z;
+	}
+
+	Point3d.prototype.add = function(point){
+		return new Point3d(this.x+point.x, this.y+point.y, this.z+point.z);
+	} 
+
+	Point3d.prototype.dist = function(point){
+		return ((this.x-point.x)**2 + 
+			(this.y-point.y)**2 + (this.z-point.z)**2)**0.5;
+	}
+
+	Point3d.prototype.minus = function(point){
+		return new Point3d(this.x-point.x, this.y-point.y, this.z-point.z);
+	} 
+
+	Point3d.prototype.dot = function(point){
+		return this.x*point.x + this.y*point.y + this.z*point.z;
+	} 
+
+	Point3d.prototype.cross = function(point){
+		return new Point3d(
+			this.y*point.z - this.z*point.y,
+			this.z*point.x - this.x*point.z,
+			this.x*point.y - this.y*point.x);
+	} 
+
+	Point3d.prototype.rotate = function(pivot, vector, angle){
+		// vector shall be of unit length
+		var t = this.minus(pivot).dot(vector);
+		var a = pivot.add(vector.multBy(t));
+		var p = this.minus(a); // transformed to origin
+
+		var orth = vector.cross(p);
+
+		return orth.multBy(Math.sin(angle)).add(p.multBy(Math.cos(angle))).add(a);
+	}
+
+	Point3d.prototype.rotateInPlace = function(pivot, vector, angle){
+		// vector shall be of unit length
+		var t = this.minus(pivot).dot(vector);
+		var a = pivot.add(vector.multBy(t));
+		var p = this.minus(a); // transformed to origin
+
+		var orth = vector.cross(p);
+
+		var res = orth.multBy(Math.sin(angle)).add(
+			p.multBy(Math.cos(angle))).add(a);
+
+		this.x = res.x;
+		this.y = res.y;
+		this.z = res.z;
+		return this;
+	}
+
+	Point3d.prototype.squaredNorm = function(){
+		return this.x**2+this.y**2+this.z**2;
+	}
+
+	Point3d.prototype.norm = function(){
+		return (this.x**2+this.y**2+this.z**2)**0.5;
+	}
+
+	Point3d.prototype.map2d = function(){
+		this.x2d = this.x; 
+		this.y2d = this.y;
+		return this;
+	}
+
+	Point3d.prototype.normalize = function(){
+		var norm = this.norm();
+		this.x /= norm;
+		this.y /= norm;
+		this.z /= norm;
+		return this;
+	}
+
+	Point3d.prototype.copy = function(){
+		return new Point3d(this.x, this.y, this.z);
+	}
+
+	Point3d.prototype.multBy = function(scalar){
+		return new Point3d(this.x*scalar, this.y*scalar, this.z*scalar);
+	}
+
+	Point3d.prototype.divBy = function(scalar){
+		return new Point3d(this.x/scalar, this.y/scalar, this.z/scalar);
+	}
+
+	Point3d.generateUniform = function(){
+		return new Point3d(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1);
+	}
+
+	function Triangle(point_a, point_b, point_c){
+		this.id = null;
+		this.points = [point_a, point_b, point_c];
+		this.original_orientation = this.points[1].minus(this.points[0]).cross(this.points[2].minus(this.points[0]));
+		this.area = this.original_orientation.norm()/2;
+
+		this.original_orientation.normalize();
+
+		var pivot_vector = 
+			this.centroid().normalize().cross(this.original_orientation);
+		this.original_angle = Math.asin(pivot_vector.norm());
+		this.w = 0;
+		this.neighbors = [];
+		this.direct_neighbors = [];
+		this.changed = false;
+		this.color = 'rgba(128,128,128,1)';
+	}
+
+	Triangle.prototype.copy = function(){
+		var t = new Triangle(this.points[0].copy(), this.points[1].copy(), this.points[2].copy());
+		t.w = this.w;
+		return t;
+	}
+
+	Triangle.prototype.centroid = function(){
+		return this.points[0].add(this.points[1]).add(this.points[2]).divBy(3)
+	}
+
+	Triangle.prototype.orientation = function(){
+		return this.points[1].minus(this.points[0]).cross(this.points[2].minus(this.points[0]));
+	}
+
+	Triangle.prototype.map2d = function(){
+		this.points.forEach(function(p){
+			p.map2d();
+		})
+	}
+
+	Triangle.prototype.translate = function(vec){
+		this.points[0].x += vec.x;
+		this.points[0].y += vec.y;
+		this.points[0].z += vec.z;
+
+		this.points[1].x += vec.x;
+		this.points[1].y += vec.y;
+		this.points[1].z += vec.z;
+
+		this.points[2].x += vec.x;
+		this.points[2].y += vec.y;
+		this.points[2].z += vec.z;
+
+		return this;
+	}
+
+	Triangle.prototype.scale = function(scalar){
+		var centroid = this.centroid();
+		this.points.forEach(function(p){
+			var rel = p.minus(centroid).multBy(scalar);
+			p.x = centroid.x + rel.x;
+			p.y = centroid.y + rel.y;
+			p.z = centroid.z + rel.z;
+		})
+		return this;
+	}
+
+	Triangle.prototype.setSize = function(size){
+		this.points.forEach(function(p){
+			var rel = p.minus(this.centroid_cache).normalize().multBy(size);
+			p.x = this.centroid_cache.x + rel.x;
+			p.y = this.centroid_cache.y + rel.y;
+			p.z = this.centroid_cache.z + rel.z;
+		},this)
+		return this;
+	}
+
+	Triangle.prototype.draw = function(ctx,force){
+		if(!force && !this.changed)return false;
+		//this.map2d();
+		ctx.beginPath();
+		ctx.fillStyle = this.color;
+		ctx.moveTo(this.points[0].x2d, this.points[0].y2d);
+		ctx.lineTo(this.points[1].x2d, this.points[1].y2d);
+		ctx.lineTo(this.points[2].x2d, this.points[2].y2d);
+		ctx.fill();
+		if(!force){
+			this.direct_neighbors.forEach(function(n){
+				if(n.changed)return;
+				n.draw(ctx, true);
+			})
+		}
+		return true;
+	}
+
+	Triangle.prototype.update = function(dt){
+		this.new_w = this.w;
+		if(this.w == 1){
+			if(this.changed){
+				this.changed = false;
+			}
+			return;
+		}
+		if(this.w > 0){
+			// started collapsing
+			this.new_w = Math.min(1, this.w+dt);
+		}else{
+			var avgState = 0;
+			this.neighbors.forEach(function(n){
+				avgState += n.w;
+			})
+			avgState /= this.neighbors.length;
+			this.r = Math.random();
+			if(this.r < avgState){
+				// start collapsing
+				this.new_w = dt;
+			}else{
+				return;
+			}
+		}
+		this.changed = true;
+		var black = Math.ceil((this.new_w)*127+128);
+		var yellow = 'rgba(255,235,60,1)';
+		this.color = `rgba(${black},${black},${black},1)`;
+	}
+
+	Triangle.prototype.highlight = function(){
+		ctx.beginPath();
+		ctx.fillStyle = 'rgba(255,235,60,1)';
+		ctx.moveTo(this.points[0].x2d, this.points[0].y2d);
+		ctx.lineTo(this.points[1].x2d, this.points[1].y2d);
+		ctx.lineTo(this.points[2].x2d, this.points[2].y2d);
+		ctx.fill();
+	}
+
+	var downTriangle = new Triangle(new Point3d(0,0,0), new Point3d(triangleSize,0,0), new Point3d(triangleSize/2, triangleSize*Math.sqrt(3)/2,0));
+
+	var upTriangle = new Triangle(new Point3d(triangleSize,0,0), new Point3d(3/2*triangleSize,triangleSize*Math.sqrt(3)/2,0), new Point3d(triangleSize/2, triangleSize*Math.sqrt(3)/2,0));
+
+	var triangles = [];
+	var columnCount = Math.ceil((sizeX+triangleSize*2)/triangleSize);
+	var rowCount = Math.ceil(sizeY/(triangleSize*Math.sqrt(3)/2));
+	For(rowCount,function(row){
+		For(columnCount, function(column){
+			var d = downTriangle.copy();
+			d.translate(new Point3d((column-1)*triangleSize + (row % 2)*triangleSize/2,row*triangleSize*Math.sqrt(3)/2,0));
+			d.scale(1.05);
+
+			var u = upTriangle.copy();
+			u.translate(new Point3d((column-1)*triangleSize + (row % 2)*triangleSize/2,row*triangleSize*Math.sqrt(3)/2,0));
+			u.scale(1.05);
+
+			if(column != 0){
+				d.direct_neighbors.push(triangles.back());
+				triangles.back().direct_neighbors.push(d);
+			}
+
+			if(row != 0){
+				if(row%2 == 0 && column != 0){
+					var index = ((row-1)*columnCount + column -1)*2 + 1;
+					d.direct_neighbors.push(triangles[index]);
+					triangles[index].direct_neighbors.push(d);
+				}
+				if(row%2 == 1){
+					var index = ((row-1)*columnCount + column)*2 + 1;
+					d.direct_neighbors.push(triangles[index]);
+					triangles[index].direct_neighbors.push(d);
+				}
+			}
+
+			d.direct_neighbors.push(u);
+			u.direct_neighbors.push(d);
+
+			d.centroid_cache = d.centroid();
+			u.centroid_cache = u.centroid();
+
+			d.id = triangles.length;
+			u.id = d.id+1;
+			triangles.push(d,u);
+
+		})
+	})
+
+	triangles.forEach(function(t){
+		// pick neighbors which are closer than x
+		t.neighbors = triangles.filter(function(tr){
+			return tr.centroid_cache.dist(t.centroid_cache) < 300;
+		})
+		t.map2d();
+	})
+
+	ctx.fillStyle = 'rgba(127,127,127,1)';
+	ctx.fillRect(0,0,sizeX, sizeY);
+
+	window.onkeydown = function(e){
+		if(e.keyCode == 27){
+			ctx.fillStyle = 'rgba(127,127,127,1)';
+			ctx.fillRect(0,0,sizeX, sizeY);
+		}
+		if(e.keyCode == 32){
+			ctx.fillStyle = 'rgba(127,127,127,1)';
+			ctx.fillRect(0,0,sizeX, sizeY);
+			for(t of triangles){
+				t.w = 0;
+				t.color = 'rgba(128,128,128,1)';
+				t.changed = false;
+			}
+			For(rowCount, function(row){
+				triangles[row*columnCount*2].w = 0.9;
+			})
+			update();
+		}
+	}
+
+	canvas.onclick = function(e){
+		var pos = new Point3d(e.clientX, e.clientY, 0);
+		var t = triangles.find(function(tr){
+			return tr.centroid_cache.dist(pos) < triangleSize/2;
+		});
+		t.highlight();
+		console.log(t);
+	}
+
+	function update(){
+		//ctx.clearRect(0,0,sizeX,sizeY);
+		var i = 0;
+		triangles.forEach(function(tr){
+			tr.update(dt);
+		})
+		triangles.forEach(function(tr){
+			tr.w = tr.new_w;
+			if(tr.draw(ctx)){
+				++i;
+			}
+		})
+		console.log(`Updated ${i} triangles`);
+		if(i != 0)setTimeout(update, 15);
+	}
+
+	//setTimeout(update, 15);
+
+</script>
+</html>
