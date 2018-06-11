@@ -7,11 +7,28 @@
 			padding: 0;
 			margin: 0;
 		}
+		body{
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+		}
+		#canvas{
+			position:absolute;
+		}
+		#press-to-play{
+			color: white;
+			font-size: 30px;
+			display: inline-block;
+			font-family: 'monospace';
+			z-index: 1;
+		}
 	</style>
 
 </head>
 <body>
 	<canvas id="canvas" width='500' height='500' style="display:block;"></canvas>
+	<span id="press-to-play">Press space to start the animation</span>
 </body>
 <script>
 
@@ -339,10 +356,11 @@
 	ctx.fillRect(0,0,sizeX, sizeY);
 
 	window.onkeydown = function(e){
-		if(e.keyCode == 27){
+		/*if(e.keyCode == 27){
 			ctx.fillStyle = 'rgba(127,127,127,1)';
 			ctx.fillRect(0,0,sizeX, sizeY);
-		}
+
+		}*/
 		if(e.keyCode == 32){
 			ctx.fillStyle = 'rgba(127,127,127,1)';
 			ctx.fillRect(0,0,sizeX, sizeY);
@@ -358,14 +376,14 @@
 		}
 	}
 
-	canvas.onclick = function(e){
+	/*canvas.onclick = function(e){
 		var pos = new Point3d(e.clientX, e.clientY, 0);
 		var t = triangles.find(function(tr){
 			return tr.centroid_cache.dist(pos) < triangleSize/2;
 		});
 		t.highlight();
 		console.log(t);
-	}
+	}*/
 
 	function update(){
 		//ctx.clearRect(0,0,sizeX,sizeY);
